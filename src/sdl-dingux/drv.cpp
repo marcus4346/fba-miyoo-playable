@@ -5,19 +5,21 @@
 
 int bDrvOkay = 0;						// 1 if the Driver has been initted okay, and it's okay to use the BurnDrv functions
 
-static bool bSaveRAM = false;
-
 static int DoLibInit()					// Do Init of Burn library driver
 {
 	int nRet;
 
-	BzipOpen(false);
+	if (!bBurnUseRomCache) {
+		BzipOpen(false);
+	}
 
 	ProgressCreate();
 
 	nRet = BurnDrvInit();
 
-	BzipClose();
+	if (!bBurnUseRomCache) {
+		BzipClose();
+	}
 
 	ProgressDestroy();
 
@@ -33,6 +35,10 @@ static int DoLibInit()					// Do Init of Burn library driver
 static int DrvLoadRom(unsigned char* Dest, int* pnWrote, int i)
 {
 	int nRet;
+
+	if (bBurnUseRomCache) {
+		return 1;
+	}
 
 	BzipOpen(false);
 
@@ -59,14 +65,6 @@ static int DrvLoadRom(unsigned char* Dest, int* pnWrote, int i)
 int DrvInit(int nDrvNum, bool bRestore)
 {
 	DrvExit();			// Make sure exitted
-	SndInit(); //AudSoundInit();	// Init Sound (not critical if it fails)
-
-	/*nBurnSoundRate = 0;		// Assume no sound
-	pBurnSoundOut = NULL;
-	if (bAudOkay) {
-		nBurnSoundRate = nAudSampleRate[0];
-		nBurnSoundLen = nAudSegLen;
-	}*/
 
 	nBurnDrvSelect = nDrvNum;		// Set the driver number
 
@@ -75,6 +73,15 @@ int DrvInit(int nDrvNum, bool bRestore)
 //	GameInpInit();					// Init game input
 
 	ConfigGameLoad();
+	InpDIPApplyConfig();
+	SndInit(); //AudSoundInit();	// Init Sound (not critical if it fails)
+
+	/*nBurnSoundRate = 0;		// Assume no sound
+	pBurnSoundOut = NULL;
+	if (bAudOkay) {
+		nBurnSoundRate = nAudSampleRate[0];
+		nBurnSoundLen = nAudSegLen;
+	}*/
 //	InputMake(true);
 
 //	GameInpDefault();
@@ -88,11 +95,12 @@ int DrvInit(int nDrvNum, bool bRestore)
 		return 1;
 	}
 
+	StatedAutoLoad();
+
 	BurnExtLoadRom = DrvLoadRom;
 
 	bDrvOkay = 1;					// Okay to use all BurnDrv functions
 
-	bSaveRAM = false;
 	nBurnLayer = 0xFF;				// show all layers
 
 	// Reset the speed throttling code, so we don't 'jump' after the load
@@ -112,12 +120,7 @@ int DrvExit()
 //		VidExit();
 
 		if (nBurnDrvSelect < nBurnDrvCount) {
-			//MemCardEject();				// Eject memory card if present
-
-			if (bSaveRAM) {
-				//StatedAuto(1);			// Save NV (or full) RAM
-				bSaveRAM = false;
-			}
+			StatedAutoSave();
 
 //			ConfigGameSave();
 

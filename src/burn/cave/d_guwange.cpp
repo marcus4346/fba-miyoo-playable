@@ -1,6 +1,7 @@
 // Guwange
 #include "cave.h"
 #include "ymz280b.h"
+#include "cache.h"
 
 #define CAVE_VBLANK_LINES 12
 
@@ -430,7 +431,9 @@ static int MemIndex()
 {
 	unsigned char* Next; Next = Mem;
 	Rom01			= Next; Next += 0x100000;		// 68K program
-	CaveSpriteROM	= Next; Next += 0x2000000;
+	if (!bBurnUseRomCache) {
+		CaveSpriteROM	= Next; Next += 0x2000000;
+	}
 	CaveTileROM[0]	= Next; Next += 0x800000;		// Tile layer 0
 	CaveTileROM[1]	= Next; Next += 0x400000;		// Tile layer 1
 	CaveTileROM[2]	= Next; Next += 0x400000;		// Tile layer 2
@@ -477,6 +480,17 @@ static void NibbleSwap4(unsigned char* pData, int nLen)
 
 static int LoadRoms()
 {
+	if (bBurnUseRomCache) {
+		if (BurnCacheRead(Rom01, 0)) return 1;
+		CaveSpriteROM = (unsigned char*)BurnCacheMap(1);
+		if (!CaveSpriteROM) return 1;
+		if (BurnCacheRead(CaveTileROM[0], 2)) return 1;
+		if (BurnCacheRead(CaveTileROM[1], 3)) return 1;
+		if (BurnCacheRead(CaveTileROM[2], 4)) return 1;
+		if (BurnCacheRead(YMZ280BROM, 5)) return 1;
+		return 0;
+	}
+
 	// Load 68000 ROM
 	BurnLoadRom(Rom01 + 0, 1, 2);
 	BurnLoadRom(Rom01 + 1, 0, 2);

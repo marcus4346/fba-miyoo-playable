@@ -148,6 +148,7 @@ void RunEmulator(int drvnum)
 finish:
 	printf("---- Shutdown Finalburn Alpha plus ----\n\n");
 	DrvExit();
+	BurnCacheExit();
 
 	gui_Exit();
 

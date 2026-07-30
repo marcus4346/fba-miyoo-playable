@@ -84,25 +84,10 @@ void CreateCapexLists()
 int FindDrvByFileName(const char *fn)
 {
 	char romname[MAX_PATH];
-	char *p;
 
-	// FIXME: use p = strrchr(fn, '/');
-	// and add given path to szAppRomPaths list
-	strcpy(szAppRomPaths[0], fn);
-	p = strrchr(szAppRomPaths[0], '/');
-	if(p) {
-		p++;
-		strcpy(romname, p);
-
-		*p = 0;
-		p = strrchr(romname, '.');
-		if(p) *p = 0;
-		else {
-			// error
-			return -1;
-		}
-	} else {
-		// error
+	if (BurnCacheInit(fn, romname)) {
+		printf("Unable to initialise ROM file: %s\n", fn);
+		BurnCacheExit();
 		return -1;
 	}
 
@@ -116,10 +101,12 @@ int FindDrvByFileName(const char *fn)
 		// unsupport rom ...
 		nBurnDrvSelect = ~0U;
 		printf("Rom %s not supported!\n", romname);
+		BurnCacheExit();
 		return -1;
 	}
 
 	nBurnDrvSelect = 0;
+	BurnCacheExit();
 	return -1;
 }
 

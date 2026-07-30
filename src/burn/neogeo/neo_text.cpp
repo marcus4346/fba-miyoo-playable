@@ -1,4 +1,5 @@
 #include "neogeo.h"
+#include "cache.h"
 
 unsigned char* NeoTextROM;
 int nNeoTextROMSize = -1;
@@ -195,6 +196,11 @@ int NeoInitText()
 		nMaxX = 40;
 	}
 
+	if (bBurnUseRomCache) {
+		if (BurnCacheRead((unsigned char*)NeoTextTileAttrib, 6)) {
+			return 1;
+		}
+	} else {
 	for (int i = 0; i < nTileNum; i++) {
 		pTile = NeoTextROM + (i << 5);
 		bool bTransparent = true;
@@ -213,6 +219,7 @@ int NeoInitText()
 	}
 	for (int i = nTileNum; i < 0x2000; i++) {
 		NeoTextTileAttrib[i] = 1;
+	}
 	}
 
 	nBankswitch = 0;

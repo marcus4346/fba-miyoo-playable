@@ -31,6 +31,8 @@ typedef struct
 	char *year[NB_MAX_GAMES];
 	char *manufacturer[NB_MAX_GAMES];
 	char *parent[NB_MAX_GAMES];
+	unsigned char path[NB_MAX_GAMES];
+	unsigned char cache[NB_MAX_GAMES];
 	unsigned char etat[NB_MAX_GAMES];
 	unsigned int longueur[NB_MAX_GAMES];
 	unsigned int long_max;

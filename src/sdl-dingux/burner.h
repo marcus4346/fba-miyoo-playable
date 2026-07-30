@@ -48,6 +48,7 @@
 #include "tchar.h"
 #include "version.h"
 #include "burn.h"
+#include "cache.h"
 
 // ---------------------------------------------------------------------------
 // OS independent functionality
@@ -74,6 +75,8 @@ int BurnStateSave(const char * szName, int bAll);
 extern int nSavestateSlot;
 int StatedLoad(int nSlot);
 int StatedSave(int nSlot);
+int StatedAutoLoad();
+int StatedAutoSave();
 
 
 // zipfn.cpp
@@ -98,6 +101,8 @@ int BzipStatus();
 // paths.cpp
 extern char szAppHomePath[MAX_PATH];
 extern char szAppSavePath[MAX_PATH];
+extern char szAppNvramPath[MAX_PATH];
+extern char szAppMemcardPath[MAX_PATH];
 extern char szAppConfigPath[MAX_PATH];
 extern char szAppSamplesPath[MAX_PATH]; // for burn/snd/samples.cpp
 extern char szAppPreviewPath[MAX_PATH];
@@ -161,6 +166,7 @@ int DrvExit();
 
 // main.cpp
 extern char szAppBurnVer[16];
+int FindDrvByFileName(const char *fn);
 
 // run.cpp
 extern bool bShowFPS;
@@ -173,5 +179,14 @@ extern int nAnalogSpeed;
 int InpInit();
 int InpExit();
 void InpDIP();
+void InpDIPApplyConfig();
+void InpDIPConfigClear();
+int InpDIPConfigSet(int nBank, int nValue);
+int InpDIPConfigGetEntry(int nEntry, int *pnBank, unsigned char *pnValue);
+int InpDIPConfigGetBankCount();
+int InpDIPConfigGetByBank(int nBank, unsigned char *pnValue);
+int InpDIPConfigGetDefaultByInput(int nInput, unsigned char *pnValue);
+int InpDIPConfigGetByInput(int nInput, unsigned char *pnValue);
+int InpDIPConfigSetByInput(int nInput, unsigned char nMask, unsigned char nSetting);
 
 #endif // _BURNER_H_

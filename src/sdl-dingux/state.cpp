@@ -1,5 +1,6 @@
 // Driver Save State module
 #include "burner.h"
+#include <errno.h>
 
 FILE *bfp = NULL;
 
@@ -334,4 +335,272 @@ int StatedSave(int nSlot)
 	sprintf(szSavestateName, "%s/%s%i.sav", szAppSavePath, BurnDrvGetText(DRV_NAME), nSlot);
 	printf("StatedSave: %s\n", szSavestateName);
 	return BurnStateSave(szSavestateName, 1);
+}
+
+// ------------ Automatic non-volatile storage ------------------------------
+
+typedef int (__cdecl *AutoBurnAcb)(struct BurnArea* pba);
+
+static unsigned char* pAutoData = NULL;
+static int nAutoDataLen = 0;
+static int nAutoDataPos = 0;
+static int nAutoScanError = 0;
+
+static int __cdecl AutoLenAcb(struct BurnArea* pba)
+{
+	if (pba->nLen > 0x7FFFFFFF - nAutoDataLen) {
+		nAutoScanError = 1;
+		return 1;
+	}
+
+	nAutoDataLen += pba->nLen;
+	return 0;
+}
+
+static int AutoGetLen(int nType)
+{
+	AutoBurnAcb pOldBurnAcb = BurnAcb;
+
+	nAutoDataLen = 0;
+	nAutoScanError = 0;
+	BurnAcb = AutoLenAcb;
+	BurnAreaScan(nType, NULL);
+	BurnAcb = pOldBurnAcb;
+
+	return nAutoScanError ? -1 : nAutoDataLen;
+}
+
+static int __cdecl AutoSaveAcb(struct BurnArea* pba)
+{
+	if (pba->nLen > (unsigned int)(nAutoDataLen - nAutoDataPos)) {
+		nAutoScanError = 1;
+		return 1;
+	}
+
+	memcpy(pAutoData + nAutoDataPos, pba->Data, pba->nLen);
+	nAutoDataPos += pba->nLen;
+	return 0;
+}
+
+static int __cdecl AutoLoadAcb(struct BurnArea* pba)
+{
+	if (pba->nLen > (unsigned int)(nAutoDataLen - nAutoDataPos)) {
+		nAutoScanError = 1;
+		return 1;
+	}
+
+	memcpy(pba->Data, pAutoData + nAutoDataPos, pba->nLen);
+	nAutoDataPos += pba->nLen;
+	return 0;
+}
+
+// 0 = loaded, 1 = file does not exist, 2 = invalid or unreadable
+static int AutoReadFile(const char* szName, unsigned char* pData, int nLen)
+{
+	FILE* fp = fopen(szName, "rb");
+	if (fp == NULL) {
+		return errno == ENOENT ? 1 : 2;
+	}
+
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return 2;
+	}
+
+	long nFileLen = ftell(fp);
+	if (nFileLen != nLen || fseek(fp, 0, SEEK_SET) != 0) {
+		fclose(fp);
+		return 2;
+	}
+
+	int nRet = fread(pData, 1, nLen, fp) == (unsigned int)nLen ? 0 : 2;
+	if (fclose(fp) != 0) nRet = 2;
+	return nRet;
+}
+
+static int AutoWriteFile(const char* szName, const unsigned char* pData, int nLen)
+{
+	char szTempName[MAX_PATH];
+	if (snprintf(szTempName, sizeof(szTempName), "%s.tmp", szName) >= (int)sizeof(szTempName)) {
+		return 1;
+	}
+
+	FILE* fp = fopen(szTempName, "wb");
+	if (fp == NULL) return 1;
+
+	int nRet = 0;
+	if (fwrite(pData, 1, nLen, fp) != (unsigned int)nLen) nRet = 1;
+	if (fflush(fp) != 0) nRet = 1;
+	if (fclose(fp) != 0) nRet = 1;
+
+	if (nRet == 0 && rename(szTempName, szName) != 0) nRet = 1;
+	if (nRet) remove(szTempName);
+	return nRet;
+}
+
+static int AutoMakeName(char* szName, int nNameLen, const char* szPath, const char* szExtension)
+{
+	int nWritten = snprintf(szName, nNameLen, "%s/%s.%s", szPath,
+		BurnDrvGetTextA(DRV_NAME), szExtension);
+	return nWritten < 0 || nWritten >= nNameLen ? 1 : 0;
+}
+
+static int AutoLoadNvram()
+{
+	int nLen = AutoGetLen(ACB_NVRAM);
+	if (nLen <= 0) return nLen < 0 ? 1 : 0;
+
+	char szName[MAX_PATH];
+	if (AutoMakeName(szName, sizeof(szName), szAppNvramPath, "nv")) return 1;
+
+	unsigned char* pData = (unsigned char*)malloc(nLen);
+	if (pData == NULL) return 1;
+
+	int nRead = AutoReadFile(szName, pData, nLen);
+	if (nRead == 0) {
+		AutoBurnAcb pOldBurnAcb = BurnAcb;
+		pAutoData = pData;
+		nAutoDataLen = nLen;
+		nAutoDataPos = 0;
+		nAutoScanError = 0;
+		BurnAcb = AutoLoadAcb;
+		BurnAreaScan(ACB_NVRAM | ACB_WRITE, NULL);
+		BurnAcb = pOldBurnAcb;
+
+		if (nAutoScanError || nAutoDataPos != nLen) {
+			printf("NVRAM load failed: scan size changed for %s\n", szName);
+			nRead = 2;
+		} else {
+			printf("NVRAM loaded: %s\n", szName);
+		}
+	} else if (nRead == 2) {
+		printf("NVRAM load ignored: invalid or unreadable file %s\n", szName);
+	}
+
+	free(pData);
+	pAutoData = NULL;
+	return nRead == 2 ? 1 : 0;
+}
+
+static int AutoSaveNvram()
+{
+	int nLen = AutoGetLen(ACB_NVRAM);
+	if (nLen <= 0) return nLen < 0 ? 1 : 0;
+
+	char szName[MAX_PATH];
+	if (AutoMakeName(szName, sizeof(szName), szAppNvramPath, "nv")) return 1;
+
+	unsigned char* pData = (unsigned char*)malloc(nLen);
+	if (pData == NULL) return 1;
+
+	AutoBurnAcb pOldBurnAcb = BurnAcb;
+	pAutoData = pData;
+	nAutoDataLen = nLen;
+	nAutoDataPos = 0;
+	nAutoScanError = 0;
+	BurnAcb = AutoSaveAcb;
+	BurnAreaScan(ACB_NVRAM | ACB_READ, NULL);
+	BurnAcb = pOldBurnAcb;
+
+	int nRet = nAutoScanError || nAutoDataPos != nLen || AutoWriteFile(szName, pData, nLen);
+	if (nRet) {
+		printf("NVRAM save failed: %s\n", szName);
+	} else {
+		printf("NVRAM saved: %s\n", szName);
+	}
+
+	free(pData);
+	pAutoData = NULL;
+	return nRet;
+}
+
+static int AutoLoadMemcard()
+{
+	int nLen = AutoGetLen(ACB_MEMCARD);
+	if (nLen <= 0) return nLen < 0 ? 1 : 0;
+
+	char szName[MAX_PATH];
+	if (AutoMakeName(szName, sizeof(szName), szAppMemcardPath, "mem")) return 1;
+
+	unsigned char* pData = (unsigned char*)malloc(nLen);
+	if (pData == NULL) return 1;
+
+	int nRead = AutoReadFile(szName, pData, nLen);
+	if (nRead != 0) {
+		memset(pData, 0, nLen);
+		if (nRead == 1) {
+			printf("Memory card created: %s\n", szName);
+		} else {
+			printf("Memory card load ignored: invalid or unreadable file %s\n", szName);
+		}
+	}
+
+	AutoBurnAcb pOldBurnAcb = BurnAcb;
+	pAutoData = pData;
+	nAutoDataLen = nLen;
+	nAutoDataPos = 0;
+	nAutoScanError = 0;
+	BurnAcb = AutoLoadAcb;
+	BurnAreaScan(ACB_MEMCARD | ACB_WRITE, NULL);
+	BurnAcb = pOldBurnAcb;
+
+	int nRet = nAutoScanError || nAutoDataPos != nLen;
+	if (nRet) {
+		printf("Memory card insert failed: %s\n", szName);
+	} else if (nRead == 0) {
+		printf("Memory card loaded: %s\n", szName);
+	}
+
+	free(pData);
+	pAutoData = NULL;
+	return nRet;
+}
+
+static int AutoSaveMemcard()
+{
+	int nLen = AutoGetLen(ACB_MEMCARD);
+	if (nLen <= 0) return nLen < 0 ? 1 : 0;
+
+	char szName[MAX_PATH];
+	if (AutoMakeName(szName, sizeof(szName), szAppMemcardPath, "mem")) return 1;
+
+	unsigned char* pData = (unsigned char*)malloc(nLen);
+	if (pData == NULL) return 1;
+	memset(pData, 0, nLen);
+
+	AutoBurnAcb pOldBurnAcb = BurnAcb;
+	pAutoData = pData;
+	nAutoDataLen = nLen;
+	nAutoDataPos = 0;
+	nAutoScanError = 0;
+	BurnAcb = AutoSaveAcb;
+	BurnAreaScan(ACB_MEMCARD | ACB_READ, NULL);
+	BurnAcb = pOldBurnAcb;
+
+	// Some cards report a smaller active size when ejected. The remainder of
+	// the fixed-capacity raw image stays zero-filled.
+	int nRet = nAutoScanError || AutoWriteFile(szName, pData, nLen);
+	if (nRet) {
+		printf("Memory card save failed: %s\n", szName);
+	} else {
+		printf("Memory card saved: %s\n", szName);
+	}
+
+	free(pData);
+	pAutoData = NULL;
+	return nRet;
+}
+
+int StatedAutoLoad()
+{
+	int nRet = AutoLoadNvram();
+	if (AutoLoadMemcard()) nRet = 1;
+	return nRet;
+}
+
+int StatedAutoSave()
+{
+	int nRet = AutoSaveNvram();
+	if (AutoSaveMemcard()) nRet = 1;
+	return nRet;
 }

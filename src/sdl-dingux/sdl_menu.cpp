@@ -38,6 +38,8 @@
 #define COLOR_ROM_INFO      color16(22, 36, 26)
 #define COLOR_ACTIVE_ITEM   color16(31, 63, 31)
 #define COLOR_INACTIVE_ITEM color16(13, 40, 18)
+#define COLOR_ACTIVE_CHANGED color16(31, 60, 00)
+#define COLOR_INACTIVE_CHANGED color16(24, 40, 00)
 #define COLOR_FRAMESKIP_BAR color16(15, 31, 31)
 #define COLOR_HELP_TEXT     color16(16, 40, 24)
 
@@ -67,6 +69,7 @@ static void gui_Savestate() { StatedSave(nSavestateSlot); }
 static void call_exit() { extern int done; GameLooping = false; done = 1; }
 static void call_continue() { extern int done; done = 1; }
 static void gui_KeyMenuRun();
+static void gui_DipMenuRun();
 static void gui_reset();
 
 /* data definitions */
@@ -79,6 +82,7 @@ char *gui_SoundSampleRates[] = {"11025", "16000", "22050", "32000", "44100"};
 MENUITEM gui_MainMenuItems[] = {
 	{(char *)"Continue", NULL, 0, NULL, &call_continue},
 	{(char *)"Key config", NULL, 0, NULL, &gui_KeyMenuRun},
+	{(char *)"DIP switches", NULL, 0, NULL, &gui_DipMenuRun},
 	{(char *)"Load state: ", &nSavestateSlot, 9, NULL, &gui_LoadState},
 	{(char *)"Save state: ", &nSavestateSlot, 9, NULL, &gui_Savestate},
 	{(char *)"Reset", NULL, 0, NULL, &gui_reset},
@@ -86,7 +90,7 @@ MENUITEM gui_MainMenuItems[] = {
 	{NULL, NULL, 0, NULL, NULL}
 };
 
-MENU gui_MainMenu = { 6, 0, (MENUITEM *)&gui_MainMenuItems };
+MENU gui_MainMenu = { 7, 0, (MENUITEM *)&gui_MainMenuItems };
 
 MENUITEM gui_KeyMenuItems[] = {
 	{(char *)"Fire 1   - ", &gui_KeyData[0], 5, (char **)&gui_KeyNames, NULL},
@@ -245,6 +249,350 @@ static void gui_KeyMenuRun()
 	key = &keymap.fire1;
 	for(int i = 0; i < 6; key++, i++)
 		*key = gui_KeyValue[gui_KeyData[i]];
+}
+
+typedef struct {
+	int nGroup;
+} DIPMENUITEM;
+
+static int gui_DipGetOffset()
+{
+	struct BurnDIPInfo bdi;
+	for (int i = 0; BurnDrvGetDIPInfo(&bdi, i) == 0; i++) {
+		if (bdi.nFlags == 0xF0) return bdi.nInput;
+	}
+
+	return 0;
+}
+
+static bool gui_DipCheckSetting(int nSetting)
+{
+	struct BurnDIPInfo bdi;
+	if (BurnDrvGetDIPInfo(&bdi, nSetting)) return false;
+
+	unsigned char nValue;
+	int nOffset = gui_DipGetOffset();
+	if (InpDIPConfigGetByInput(bdi.nInput + nOffset, &nValue)) return false;
+	if ((nValue & bdi.nMask) != bdi.nSetting) return false;
+
+	unsigned char nFlags = bdi.nFlags;
+	for (int i = 1; i < (nFlags & 0x0F); i++) {
+		if (BurnDrvGetDIPInfo(&bdi, nSetting + i)) return false;
+		if (InpDIPConfigGetByInput(bdi.nInput + nOffset, &nValue)) return false;
+		bool bMatch = (nValue & bdi.nMask) == bdi.nSetting;
+		if (nFlags & 0x80) {
+			if (bMatch) return false;
+		} else {
+			if (!bMatch) return false;
+		}
+	}
+
+	return true;
+}
+
+static int gui_DipBuildItems(DIPMENUITEM **ppItems)
+{
+	DIPMENUITEM *pItems = NULL;
+	int nItemCount = 0;
+	int nGroup = -1;
+	struct BurnDIPInfo bdi;
+
+	for (int i = 0; BurnDrvGetDIPInfo(&bdi, i) == 0; ) {
+		if ((bdi.nFlags & 0xF0) == 0xF0) {
+			if (bdi.nFlags == 0xFE || bdi.nFlags == 0xFD) nGroup = i;
+			i++;
+			continue;
+		}
+
+		int nStep = bdi.nFlags & 0x0F;
+		if (nStep < 1) nStep = 1;
+		if (nGroup >= 0 && gui_DipCheckSetting(i) &&
+			(nItemCount == 0 || pItems[nItemCount - 1].nGroup != nGroup)) {
+			DIPMENUITEM *pNew = (DIPMENUITEM *)realloc(
+				pItems, (nItemCount + 1) * sizeof(DIPMENUITEM));
+			if (pNew == NULL) break;
+			pItems = pNew;
+			pItems[nItemCount++].nGroup = nGroup;
+		}
+		i += nStep;
+	}
+
+	*ppItems = pItems;
+	return nItemCount;
+}
+
+static int gui_DipGetOption(int nGroup, int nOption, struct BurnDIPInfo *pOption)
+{
+	int nEntry = nGroup + 1;
+	for (int i = 0; i <= nOption; i++) {
+		do {
+			if (BurnDrvGetDIPInfo(pOption, nEntry++)) return -1;
+		} while (pOption->nFlags == 0);
+	}
+
+	return nEntry - 1;
+}
+
+static int gui_DipGetCurrentOption(int nGroup, struct BurnDIPInfo *pOption)
+{
+	struct BurnDIPInfo group;
+	if (BurnDrvGetDIPInfo(&group, nGroup)) return -1;
+
+	for (int i = 0; i < group.nSetting; i++) {
+		int nEntry = gui_DipGetOption(nGroup, i, pOption);
+		if (nEntry >= 0 && gui_DipCheckSetting(nEntry)) return i;
+	}
+
+	memset(pOption, 0, sizeof(*pOption));
+	return -1;
+}
+
+static void gui_DipSetOption(int nGroup, int nOption)
+{
+	struct BurnDIPInfo bdi;
+	int nEntry = gui_DipGetOption(nGroup, nOption, &bdi);
+	if (nEntry < 0) return;
+
+	int nOffset = gui_DipGetOffset();
+	InpDIPConfigSetByInput(bdi.nInput + nOffset, bdi.nMask, bdi.nSetting);
+	if (bdi.nFlags & 0x40) {
+		while (BurnDrvGetDIPInfo(&bdi, ++nEntry) == 0 && bdi.nFlags == 0) {
+			InpDIPConfigSetByInput(bdi.nInput + nOffset, bdi.nMask, bdi.nSetting);
+		}
+	}
+}
+
+static void gui_DipCycleOption(int nGroup, int nDirection)
+{
+	struct BurnDIPInfo group, option;
+	if (BurnDrvGetDIPInfo(&group, nGroup) || group.nSetting == 0) return;
+
+	int nCurrent = gui_DipGetCurrentOption(nGroup, &option);
+	if (nCurrent < 0) {
+		if (nDirection < 0) return;
+		nCurrent = -1;
+	}
+	nCurrent += nDirection;
+	if (nCurrent < 0 || nCurrent >= group.nSetting) return;
+	gui_DipSetOption(nGroup, nCurrent);
+}
+
+static int gui_DipGetText(int nGroup, int nNumber, char *szGroup, int nGroupLen,
+	char *szSetting, int nSettingLen)
+{
+	struct BurnDIPInfo group, option;
+	BurnDrvGetDIPInfo(&group, nGroup);
+	if (group.szText && group.szText[0]) {
+		snprintf(szGroup, nGroupLen, "%s", group.szText);
+	} else {
+		snprintf(szGroup, nGroupLen, "DIP option %d", nNumber + 1);
+	}
+
+	int nCurrent = gui_DipGetCurrentOption(nGroup, &option);
+	if (nCurrent >= 0 && option.szText) {
+		snprintf(szSetting, nSettingLen, "%s", option.szText);
+	} else {
+		snprintf(szSetting, nSettingLen, "Unknown");
+	}
+
+	return nCurrent;
+}
+
+static bool gui_DipSettingChanged(struct BurnDIPInfo *pSetting, int nOffset)
+{
+	unsigned char nValue, nDefault;
+	int nInput = pSetting->nInput + nOffset;
+	if (InpDIPConfigGetByInput(nInput, &nValue) ||
+		InpDIPConfigGetDefaultByInput(nInput, &nDefault)) return false;
+	return (nValue & pSetting->nMask) != (nDefault & pSetting->nMask);
+}
+
+static bool gui_DipIsChanged(int nGroup)
+{
+	struct BurnDIPInfo setting;
+	int nCurrent = gui_DipGetCurrentOption(nGroup, &setting);
+	if (nCurrent < 0 && gui_DipGetOption(nGroup, 0, &setting) < 0) return false;
+
+	int nOffset = gui_DipGetOffset();
+	if (gui_DipSettingChanged(&setting, nOffset)) return true;
+	if (setting.nFlags & 0x40) {
+		int nEntry = gui_DipGetOption(nGroup, nCurrent < 0 ? 0 : nCurrent, &setting);
+		while (BurnDrvGetDIPInfo(&setting, ++nEntry) == 0 && setting.nFlags == 0) {
+			if (gui_DipSettingChanged(&setting, nOffset)) return true;
+		}
+	}
+
+	return false;
+}
+
+static void gui_DipFormatRow(char *szLine, int nLineLen, const char *szGroup,
+	const char *szSetting, int nCurrent, int nSettingCount, bool bSelected)
+{
+	const int nWidth = 37;
+	bool bLeft = bSelected && nCurrent > 0;
+	bool bRight = bSelected && nCurrent >= 0 && nCurrent + 1 < nSettingCount;
+	const char *szLeft = bSelected ? (bLeft ? "< " : "  ") : "";
+	const char *szRight = bRight ? " >" : "";
+	int nGroupChars = strlen(szGroup);
+	int nSettingChars = strlen(szSetting);
+	int nAvailable = nWidth - 2 - strlen(szLeft) - strlen(szRight);
+	if (nGroupChars + nSettingChars > nAvailable) {
+		int nReservedSetting = nSettingChars < 12 ? nSettingChars : 12;
+		nGroupChars = nAvailable - nReservedSetting;
+		if (nGroupChars < 1) nGroupChars = 1;
+		nSettingChars = nAvailable - nGroupChars;
+	}
+
+	snprintf(szLine, nLineLen, "%.*s: %s%.*s%s", nGroupChars, szGroup,
+		szLeft, nSettingChars, szSetting, szRight);
+}
+
+static void gui_DipDrawClipped(const char *szText, int x, int y, int nChars, int nColor)
+{
+	char szLine[64];
+	if (nChars >= (int)sizeof(szLine)) nChars = sizeof(szLine) - 1;
+	strncpy(szLine, szText ? szText : "", nChars);
+	szLine[nChars] = 0;
+	DrawString(szLine, nColor, COLOR_BG, x, y);
+}
+
+static void gui_DipFormatBinary(unsigned char nValue, char *szBinary)
+{
+	for (int i = 0; i < 8; i++) {
+		szBinary[i] = (nValue & (0x80 >> i)) ? '1' : '0';
+	}
+	szBinary[8] = 0;
+}
+
+static void gui_DipShowBankValues()
+{
+	int nBankCount = InpDIPConfigGetBankCount();
+	for (int nBank = 0, nLine = 0; nBank < nBankCount && nLine < 4; nBank += 2, nLine++) {
+		char szLine[48], szFirst[9], szSecond[9];
+		unsigned char nValue = 0;
+		InpDIPConfigGetByBank(nBank, &nValue);
+		gui_DipFormatBinary(nValue, szFirst);
+		if (nBank + 1 < nBankCount) {
+			InpDIPConfigGetByBank(nBank + 1, &nValue);
+			gui_DipFormatBinary(nValue, szSecond);
+			snprintf(szLine, sizeof(szLine), "DIP %d: %s  DIP %d: %s",
+				nBank + 1, szFirst, nBank + 2, szSecond);
+		} else {
+			snprintf(szLine, sizeof(szLine), "DIP %d: %s", nBank + 1, szFirst);
+		}
+		DrawString(szLine, COLOR_HELP_TEXT, COLOR_BG, 8, 184 + nLine * 8);
+	}
+}
+
+static void gui_DipShow(DIPMENUITEM *pItems, int nItemCount, int nCurrent, int nFirst)
+{
+	const int nVisible = 18;
+	SDL_FillRect(menuSurface, NULL, COLOR_BG);
+	DrawString("DIP switches", COLOR_HELP_TEXT, COLOR_BG, 8, 2);
+
+	if (nItemCount == 0) {
+		DrawString("No DIP switches", COLOR_INACTIVE_ITEM, COLOR_BG, 96, 104);
+		DrawString("B: back", COLOR_HELP_TEXT, COLOR_BG, 8, 224);
+		return;
+	}
+
+	int nTotal = nItemCount + 1;
+	for (int row = 0; row < nVisible && nFirst + row < nTotal; row++) {
+		int nItem = nFirst + row;
+		bool bSelected = nItem == nCurrent;
+		int nColor = bSelected ? COLOR_ACTIVE_ITEM : COLOR_INACTIVE_ITEM;
+		char szLine[96];
+		if (nItem == nItemCount) {
+			snprintf(szLine, sizeof(szLine), "Restore defaults");
+		} else {
+			char szGroup[64], szSetting[64];
+			struct BurnDIPInfo group;
+			BurnDrvGetDIPInfo(&group, pItems[nItem].nGroup);
+			int nOption = gui_DipGetText(pItems[nItem].nGroup, nItem, szGroup, sizeof(szGroup),
+				szSetting, sizeof(szSetting));
+			gui_DipFormatRow(szLine, sizeof(szLine), szGroup, szSetting,
+				nOption, group.nSetting, bSelected);
+			if (gui_DipIsChanged(pItems[nItem].nGroup)) {
+				nColor = bSelected ? COLOR_ACTIVE_CHANGED : COLOR_INACTIVE_CHANGED;
+			}
+		}
+		if (bSelected) DrawString(">", nColor, COLOR_BG, 0, 20 + row * 8);
+		gui_DipDrawClipped(szLine, 8, 20 + row * 8, 37, nColor);
+	}
+
+	if (nFirst > 0) DrawString("^", COLOR_HELP_TEXT, COLOR_BG, 312, 20);
+	if (nFirst + nVisible < nTotal) DrawString("v", COLOR_HELP_TEXT, COLOR_BG, 312, 156);
+
+	gui_DipShowBankValues();
+	if (nCurrent == nItemCount) {
+		DrawString("A: restore defaults  B: save/back", COLOR_HELP_TEXT, COLOR_BG, 8, 224);
+	} else {
+		DrawString("Left/Right: change  B: save/back", COLOR_HELP_TEXT, COLOR_BG, 8, 224);
+	}
+}
+
+static void gui_DipKeepVisible(int nCurrent, int nTotal, int *pnFirst)
+{
+	const int nVisible = 18;
+	if (nCurrent < *pnFirst) *pnFirst = nCurrent;
+	if (nCurrent >= *pnFirst + nVisible) *pnFirst = nCurrent - nVisible + 1;
+	int nMax = nTotal > nVisible ? nTotal - nVisible : 0;
+	if (*pnFirst > nMax) *pnFirst = nMax;
+	if (*pnFirst < 0) *pnFirst = 0;
+}
+
+static void gui_DipMenuRun()
+{
+	DIPMENUITEM *pItems = NULL;
+	int nItemCount = gui_DipBuildItems(&pItems);
+	int nCurrent = 0;
+	int nFirst = 0;
+	SDL_Event gui_event;
+
+	while (1) {
+		while (SDL_PollEvent(&gui_event)) {
+			if (gui_event.type != SDL_KEYDOWN) continue;
+			if (gui_event.key.keysym.sym == SDLK_LCTRL) {
+				InpDIPApplyConfig();
+				ConfigGameSave();
+				if (pItems) free(pItems);
+				return;
+			}
+
+			if (nItemCount == 0) continue;
+			int nTotal = nItemCount + 1;
+			if (gui_event.key.keysym.sym == SDLK_UP) {
+				if (--nCurrent < 0) nCurrent = nTotal - 1;
+			} else if (gui_event.key.keysym.sym == SDLK_DOWN) {
+				if (++nCurrent >= nTotal) nCurrent = 0;
+			} else if ((gui_event.key.keysym.sym == SDLK_LEFT ||
+				gui_event.key.keysym.sym == SDLK_RIGHT) && nCurrent < nItemCount) {
+				int nGroup = pItems[nCurrent].nGroup;
+				gui_DipCycleOption(nGroup, gui_event.key.keysym.sym == SDLK_LEFT ? -1 : 1);
+				free(pItems);
+				pItems = NULL;
+				nItemCount = gui_DipBuildItems(&pItems);
+				nCurrent = 0;
+				for (int i = 0; i < nItemCount; i++) {
+					if (pItems[i].nGroup == nGroup) {
+						nCurrent = i;
+						break;
+					}
+				}
+			} else if (gui_event.key.keysym.sym == SDLK_LALT && nCurrent == nItemCount) {
+				InpDIPConfigClear();
+				free(pItems);
+				pItems = NULL;
+				nItemCount = gui_DipBuildItems(&pItems);
+				nCurrent = nItemCount;
+			}
+			gui_DipKeepVisible(nCurrent, nItemCount + 1, &nFirst);
+		}
+
+		gui_DipShow(pItems, nItemCount, nCurrent, nFirst);
+		SDL_Delay(16);
+		gui_Flip();
+	}
 }
 
 static void gui_reset()

@@ -8,6 +8,8 @@
 
 char szAppHomePath[MAX_PATH] = "./.fba";			// ~/.fba
 char szAppSavePath[MAX_PATH] = "./.fba/saves";		// ~/.fba/saves
+char szAppNvramPath[MAX_PATH] = "./.fba/nvram";		// ~/.fba/nvram
+char szAppMemcardPath[MAX_PATH] = "./.fba/memcards";	// ~/.fba/memcards
 char szAppConfigPath[MAX_PATH] = "./.fba/configs";	// ~/.fba/configs
 char szAppHiscorePath[MAX_PATH] = "./.fba/hiscore";	// ~/.fba/highscore // for burn/hiscore.cpp
 char szAppSamplesPath[MAX_PATH] = "./.fba/samples";	// ~/.fba/samples // for burn/snd/samples.cpp
@@ -29,6 +31,12 @@ void BurnPathsInit()
 	sprintf(szAppSavePath, "%s/saves", szAppHomePath);
 	mkdir(szAppSavePath, 0777);
 
+	sprintf(szAppNvramPath, "%s/nvram", szAppHomePath);
+	mkdir(szAppNvramPath, 0777);
+
+	sprintf(szAppMemcardPath, "%s/memcards", szAppHomePath);
+	mkdir(szAppMemcardPath, 0777);
+
 	sprintf(szAppConfigPath, "%s/configs", szAppHomePath);
 	mkdir(szAppConfigPath, 0777);
 
@@ -44,6 +52,12 @@ void BurnPathsInit()
 
 	sprintf(szAppSavePath, "%s/saves", szAppHomePath);
 	mkdir(szAppSavePath);
+
+	sprintf(szAppNvramPath, "%s/nvram", szAppHomePath);
+	mkdir(szAppNvramPath);
+
+	sprintf(szAppMemcardPath, "%s/memcards", szAppHomePath);
+	mkdir(szAppMemcardPath);
 
 	sprintf(szAppConfigPath, "%s/configs", szAppHomePath);
 	mkdir(szAppConfigPath);

@@ -60,9 +60,10 @@ run it, press START and choose Rom Show mode: all, available or non-available.
 If needed, supplementary rom paths could be set.
 
 FBA SDL could be used as a standalone application when invoked with
-rom zip with full path as a parameter:
+rom zip or fba cache with full path as a parameter:
 
 ./fba /mnt/roms/FBA/dino.zip
+./fba /mnt/roms/FBA/dino.fba
 
 Full path and extension are obligatory.
 

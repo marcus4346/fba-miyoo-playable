@@ -3,6 +3,7 @@
 #include "msm6295.h"
 #include "burn_ym2203.h"
 #include "bitswap.h"
+#include "cache.h"
 
 #define CAVE_VBLANK_LINES 12
 
@@ -611,7 +612,9 @@ static int MemIndex()
 	unsigned char* Next; Next = Mem;
 	Rom01			= Next; Next += 0x300000;		// 68K program
 	RomZ80			= Next; Next += 0x040000;
-	CaveSpriteROM	= Next; Next += 0x1000000 * 2;
+	if (!bBurnUseRomCache) {
+		CaveSpriteROM	= Next; Next += 0x1000000 * 2;
+	}
 	CaveTileROM[0]	= Next; Next += 0x400000;		// Tile layer 0
 	CaveTileROM[1]	= Next; Next += 0x400000;		// Tile layer 1
 	CaveTileROM[2]	= Next; Next += 0x400000;		// Tile layer 2
@@ -660,6 +663,19 @@ static void NibbleSwap2(unsigned char* pData, int nLen)
 
 static int LoadRoms()
 {
+	if (bBurnUseRomCache) {
+		if (BurnCacheRead(Rom01, 0)) return 1;
+		if (BurnCacheRead(RomZ80, 1)) return 1;
+		CaveSpriteROM = (unsigned char*)BurnCacheMap(2);
+		if (!CaveSpriteROM) return 1;
+		if (BurnCacheRead(CaveTileROM[0], 3)) return 1;
+		if (BurnCacheRead(CaveTileROM[1], 4)) return 1;
+		if (BurnCacheRead(CaveTileROM[2], 5)) return 1;
+		if (BurnCacheRead(CaveTileROM[3], 6)) return 1;
+		if (BurnCacheRead(MSM6295ROM, 7)) return 1;
+		return 0;
+	}
+
 	BurnLoadRom(Rom01 + 0x000001, 0, 2);
 	BurnLoadRom(Rom01 + 0x000000, 1, 2);
 	BurnLoadRom(Rom01 + 0x100001, 2, 2);
@@ -703,6 +719,19 @@ static int LoadRoms()
 
 static int PlegendsLoadRoms()
 {
+	if (bBurnUseRomCache) {
+		if (BurnCacheRead(Rom01, 0)) return 1;
+		if (BurnCacheRead(RomZ80, 1)) return 1;
+		CaveSpriteROM = (unsigned char*)BurnCacheMap(2);
+		if (!CaveSpriteROM) return 1;
+		if (BurnCacheRead(CaveTileROM[0], 3)) return 1;
+		if (BurnCacheRead(CaveTileROM[1], 4)) return 1;
+		if (BurnCacheRead(CaveTileROM[2], 5)) return 1;
+		if (BurnCacheRead(CaveTileROM[3], 6)) return 1;
+		if (BurnCacheRead(MSM6295ROM, 7)) return 1;
+		return 0;
+	}
+
 	BurnLoadRom(Rom01 + 0x000001, 0, 2);
 	BurnLoadRom(Rom01 + 0x000000, 1, 2);
 	BurnLoadRom(Rom01 + 0x100001, 2, 2);

@@ -150,7 +150,7 @@ void ConfigGameDefault()
 {
 	// Initialize configuration options
 	options.sound = 2;
-	options.samplerate = 0;		// 0 - 11025, 1 - 16000, 2 - 22050, 3 - 32000
+	options.samplerate = 3;		// 0 - 11025, 1 - 16000, 2 - 22050, 3 - 32000, 4 - 44100
 	options.vsync = 0;
 	options.rescale = 0;		// no scaling by default
 	options.rotate = 0;
@@ -184,21 +184,29 @@ int ConfigGameLoad()
 	FILE *f;
 	char arg1[128];
 	signed long argd;
+	int dipBank, dipValue;
 	char line[256];
 	char cfgname[MAX_PATH];
+
+	ConfigGameDefault();
+	InpDIPConfigClear();
 
 	sprintf((char*)cfgname, "%s/%s.cfg", szAppConfigPath, BurnDrvGetTextA(DRV_NAME));
 
 	if(!(f = fopen(cfgname,"r"))) {
-		// set default values and exit
-		ConfigGameDefault();
 		return 0;
 	}
 
 	while(fgets(line,sizeof(line),f) != NULL) {
-		sscanf(line, "%s %d", &arg1, &argd);
+		if (sscanf(line, "%127s %ld", arg1, &argd) < 1) continue;
 
 		if(strcmp(arg1, "#") != 0) {
+			if(strcmp(arg1, "FBA_DIP") == 0) {
+				if (sscanf(line, "%*s %i %i", &dipBank, &dipValue) == 2) {
+					InpDIPConfigSet(dipBank, dipValue);
+				}
+				continue;
+			}
 			if(strcmp(arg1, "FBA_SOUND") == 0) options.sound = argd;
 			if(strcmp(arg1, "FBA_SAMPLERATE") == 0) options.samplerate = argd;
 			if(strcmp(arg1, "FBA_VSYNC") == 0) options.vsync = argd;
@@ -254,6 +262,16 @@ int ConfigGameSave()
 	fprintf(fp, "FBA_M68KCORE %d\n", options.m68kcore);
 	fprintf(fp, "FBA_Z80CORE %d\n", options.z80core);
 	fprintf(fp, "FBA_SENSE %d\n", options.sense);
+
+	int dipEntry = 0;
+	int dipBank;
+	unsigned char dipValue;
+	if (InpDIPConfigGetEntry(0, NULL, NULL) == 0) {
+		fprintf(fp, "\n# DIP switch overrides (bank, raw value)\n\n");
+		while (InpDIPConfigGetEntry(dipEntry++, &dipBank, &dipValue) == 0) {
+			fprintf(fp, "FBA_DIP %d 0x%02X\n", dipBank, dipValue);
+		}
+	}
 
 	fprintf(fp, "\n# Keys layout\n\n");
 	fprintf(fp, "KEY_UP %d\n", keymap.up);

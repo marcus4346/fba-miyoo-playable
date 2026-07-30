@@ -23,11 +23,26 @@ struct GameInput {
 	int nBit;   // bit offset of Keypad data
 };
 
+struct GameDIPBank {
+	unsigned int nInput;
+	UINT8 *pVal;
+	UINT8 nDefault;
+	UINT8 nConst;
+};
+
 struct DIPInfo{
-	unsigned char nDIP;
-	unsigned short nFirstDIP;
-	struct GameInput *DIPData;
+	unsigned int nDIP;
+	struct GameDIPBank *DIPData;
 } DIPInfo;
+
+struct DIPConfigEntry {
+	int nBank;
+	UINT8 nValue;
+};
+
+static struct DIPConfigEntry *pDIPConfig = NULL;
+static int nDIPConfigCount = 0;
+
 // Mapping of PC inputs to game inputs
 struct GameInput GameInput[4][MAX_INPUT_inp];
 unsigned int nGameInpCount = 0;
@@ -40,11 +55,30 @@ int DoInputBlank(int /*bDipSwitch*/)
 {
   int iJoyNum = 0;
   unsigned int i=0;
+	unsigned int nDIPIndex = 0;
   // Reset all inputs to undefined (even dip switches, if bDipSwitch==1)
   char controlName[MAX_INPUT_inp];
 
+	if (DIPInfo.DIPData) {
+		free(DIPInfo.DIPData);
+		DIPInfo.DIPData = NULL;
+	}
+	DIPInfo.nDIP = 0;
+	for (i = 0; i < nGameInpCount; i++) {
+		struct BurnInputInfo bii;
+		memset(&bii, 0, sizeof(bii));
+		BurnDrvGetInputInfo(&bii, i);
+		if (bii.nType == BIT_DIPSWITCH) DIPInfo.nDIP++;
+	}
+	if (DIPInfo.nDIP) {
+		DIPInfo.DIPData = (struct GameDIPBank *)malloc(DIPInfo.nDIP * sizeof(struct GameDIPBank));
+		if (DIPInfo.DIPData == NULL) {
+			DIPInfo.nDIP = 0;
+			return 1;
+		}
+		memset(DIPInfo.DIPData, 0, DIPInfo.nDIP * sizeof(struct GameDIPBank));
+	}
 
-  DIPInfo.nDIP = 0;
   // Get the targets in the library for the Input Values
   for (i=0; i<nGameInpCount; i++)
   {
@@ -58,17 +92,9 @@ int DoInputBlank(int /*bDipSwitch*/)
 
 	if (bii.nType==BIT_DIPSWITCH)
 	{
-		if (DIPInfo.nDIP == 0)
-		{
-			DIPInfo.nFirstDIP = i;
-			DIPInfo.nDIP = nGameInpCount - i;
-			DIPInfo.DIPData = (struct GameInput *)malloc(DIPInfo.nDIP * sizeof(struct GameInput));
-			memset(DIPInfo.DIPData,0,DIPInfo.nDIP * sizeof(struct GameInput));
-		}
-		DIPInfo.DIPData[i-DIPInfo.nFirstDIP].pVal = bii.pVal;
-		DIPInfo.DIPData[i-DIPInfo.nFirstDIP].nType = bii.nType;
-		DIPInfo.DIPData[i-DIPInfo.nFirstDIP].nConst = 0;
-		DIPInfo.DIPData[i-DIPInfo.nFirstDIP].nBit = 0;
+		DIPInfo.DIPData[nDIPIndex].nInput = i;
+		DIPInfo.DIPData[nDIPIndex].pVal = bii.pVal;
+		nDIPIndex++;
 	}
 
 	if ((bii.szInfo[0]=='p') || (bii.szInfo[0]=='m'))
@@ -283,7 +309,10 @@ int InpInit()
 	}
 
 	memset(GameInput,0,MAX_INPUT_inp*4*sizeof(struct GameInput));
-	DoInputBlank(1);
+	ServiceDip = NULL;
+	P1Start = NULL;
+	P2Start = NULL;
+	if (DoInputBlank(1)) return 1;
 
 	bInputOk = true;
 
@@ -294,7 +323,9 @@ int InpExit()
 {
 	bInputOk = false;
 	nGameInpCount = 0;
-	if (DIPInfo.nDIP) free (DIPInfo.DIPData);
+	if (DIPInfo.DIPData) free(DIPInfo.DIPData);
+	DIPInfo.DIPData = NULL;
+	DIPInfo.nDIP = 0;
 	return 0;
 }
 
@@ -436,13 +467,136 @@ int InpMake(unsigned int key[])
 	return 0;
 }
 
-int GameScreenMode;
+static int InpDIPFindBankByInput(int nInput)
+{
+	for (unsigned int i = 0; i < DIPInfo.nDIP; i++) {
+		if ((int)DIPInfo.DIPData[i].nInput == nInput) return i;
+	}
+
+	return -1;
+}
+
+static int InpDIPConfigFind(int nBank)
+{
+	for (int i = 0; i < nDIPConfigCount; i++) {
+		if (pDIPConfig[i].nBank == nBank) return i;
+	}
+
+	return -1;
+}
+
+static void InpDIPConfigRemove(int nEntry)
+{
+	if (nEntry < 0 || nEntry >= nDIPConfigCount) return;
+
+	if (nEntry + 1 < nDIPConfigCount) {
+		memmove(pDIPConfig + nEntry, pDIPConfig + nEntry + 1,
+			(nDIPConfigCount - nEntry - 1) * sizeof(struct DIPConfigEntry));
+	}
+	nDIPConfigCount--;
+	if (nDIPConfigCount == 0) {
+		free(pDIPConfig);
+		pDIPConfig = NULL;
+	}
+}
+
+void InpDIPConfigClear()
+{
+	if (pDIPConfig) free(pDIPConfig);
+	pDIPConfig = NULL;
+	nDIPConfigCount = 0;
+}
+
+int InpDIPConfigSet(int nBank, int nValue)
+{
+	if (nBank < 0 || nValue < 0 || nValue > 0xFF) return 1;
+
+	int nEntry = InpDIPConfigFind(nBank);
+	if (nEntry >= 0) {
+		pDIPConfig[nEntry].nValue = nValue;
+		return 0;
+	}
+
+	struct DIPConfigEntry *pNew = (struct DIPConfigEntry *)realloc(
+		pDIPConfig, (nDIPConfigCount + 1) * sizeof(struct DIPConfigEntry));
+	if (pNew == NULL) return 1;
+	pDIPConfig = pNew;
+
+	int nInsert = nDIPConfigCount;
+	while (nInsert > 0 && pDIPConfig[nInsert - 1].nBank > nBank) {
+		pDIPConfig[nInsert] = pDIPConfig[nInsert - 1];
+		nInsert--;
+	}
+	pDIPConfig[nInsert].nBank = nBank;
+	pDIPConfig[nInsert].nValue = nValue;
+	nDIPConfigCount++;
+
+	return 0;
+}
+
+int InpDIPConfigGetEntry(int nEntry, int *pnBank, unsigned char *pnValue)
+{
+	if (nEntry < 0 || nEntry >= nDIPConfigCount) return 1;
+	if (pnBank) *pnBank = pDIPConfig[nEntry].nBank;
+	if (pnValue) *pnValue = pDIPConfig[nEntry].nValue;
+	return 0;
+}
+
+static UINT8 InpDIPConfigGetValue(int nBank)
+{
+	int nEntry = InpDIPConfigFind(nBank);
+	if (nEntry >= 0) return pDIPConfig[nEntry].nValue;
+	return DIPInfo.DIPData[nBank].nDefault;
+}
+
+int InpDIPConfigGetBankCount()
+{
+	return DIPInfo.nDIP;
+}
+
+int InpDIPConfigGetByBank(int nBank, unsigned char *pnValue)
+{
+	if (nBank < 0 || nBank >= (int)DIPInfo.nDIP || pnValue == NULL) return 1;
+	*pnValue = InpDIPConfigGetValue(nBank);
+	return 0;
+}
+
+int InpDIPConfigGetDefaultByInput(int nInput, unsigned char *pnValue)
+{
+	int nBank = InpDIPFindBankByInput(nInput);
+	if (nBank < 0 || pnValue == NULL) return 1;
+	*pnValue = DIPInfo.DIPData[nBank].nDefault;
+	return 0;
+}
+
+int InpDIPConfigGetByInput(int nInput, unsigned char *pnValue)
+{
+	int nBank = InpDIPFindBankByInput(nInput);
+	if (nBank < 0 || pnValue == NULL) return 1;
+	*pnValue = InpDIPConfigGetValue(nBank);
+	return 0;
+}
+
+int InpDIPConfigSetByInput(int nInput, unsigned char nMask, unsigned char nSetting)
+{
+	int nBank = InpDIPFindBankByInput(nInput);
+	if (nBank < 0) return 1;
+
+	UINT8 nValue = InpDIPConfigGetValue(nBank);
+	nValue = (nValue & ~nMask) | (nSetting & nMask);
+	int nEntry = InpDIPConfigFind(nBank);
+	if (nValue == DIPInfo.DIPData[nBank].nDefault) {
+		if (nEntry >= 0) InpDIPConfigRemove(nEntry);
+		return 0;
+	}
+
+	return InpDIPConfigSet(nBank, nValue);
+}
 
 void InpDIP()
 {
 	struct BurnDIPInfo bdi;
-	struct GameInput* pgi;
-	int i, j;
+	int i;
 	int nDIPOffset = 0;
 
 	// get dip switch offset
@@ -452,44 +606,45 @@ void InpDIP()
 			break;
 		}
 
-	// set DIP to default
+	for (i = 0; i < (int)DIPInfo.nDIP; i++) {
+		DIPInfo.DIPData[i].nDefault = 0;
+		DIPInfo.DIPData[i].nConst = 0;
+	}
+
+	// set DIP to driver defaults
 	i = 0;
-	bool bDifficultyFound = false;
 	while (BurnDrvGetDIPInfo(&bdi, i) == 0) {
-
-		//printf("%2d. %02x '%s'\n", bdi.nInput, bdi.nFlags, bdi.szText);
-
 		if (bdi.nFlags == 0xFF) {
-			pgi = DIPInfo.DIPData + (bdi.nInput + nDIPOffset - DIPInfo.nFirstDIP);
-			pgi->nConst = (pgi->nConst & ~bdi.nMask) | (bdi.nSetting & bdi.nMask);
-		} else
-		if (bdi.nFlags == 0xFE) {
-			if ( bdi.szText )
-				if ( ( strcmp(bdi.szText, "Difficulty") == 0  ) ||
-					 ( strcmp(bdi.szText, "Game Level") == 0  )
-
-				   ) bDifficultyFound = true;
-		} else {
-			if (bDifficultyFound) {
-				if ( bdi.nFlags == 0x01 ) {
-
-					// use GameScreenMode store
-					pgi = DIPInfo.DIPData + (bdi.nInput + nDIPOffset - DIPInfo.nFirstDIP);
-					for (j=0; j<8; j++)
-						if ((1U << j) & bdi.nMask)
-							break;
-					pgi->nConst = (pgi->nConst & ~bdi.nMask) | ((GameScreenMode << j) & bdi.nMask);
-
-					printf("Set DIP Difficulty [%d] = 0x%02x\n", bdi.nInput, (GameScreenMode << j) & bdi.nMask);
-				}
-				bDifficultyFound = false;
+			int nBank = InpDIPFindBankByInput(bdi.nInput + nDIPOffset);
+			if (nBank >= 0) {
+				struct GameDIPBank *pDip = DIPInfo.DIPData + nBank;
+				pDip->nDefault = (pDip->nDefault & ~bdi.nMask) | (bdi.nSetting & bdi.nMask);
 			}
 		}
 		i++;
 	}
-	for (i=0,pgi=DIPInfo.DIPData; i<(int)DIPInfo.nDIP; i++,pgi++) {
-		if (pgi->pVal == NULL)
-			continue;
-		*(pgi->pVal) = pgi->nConst;
+
+	for (i = 0; i < (int)DIPInfo.nDIP; i++) {
+		DIPInfo.DIPData[i].nConst = DIPInfo.DIPData[i].nDefault;
+		if (DIPInfo.DIPData[i].pVal) {
+			*(DIPInfo.DIPData[i].pVal) = DIPInfo.DIPData[i].nConst;
+		}
+	}
+}
+
+void InpDIPApplyConfig()
+{
+	for (int i = nDIPConfigCount - 1; i >= 0; i--) {
+		if (pDIPConfig[i].nBank >= (int)DIPInfo.nDIP ||
+			pDIPConfig[i].nValue == DIPInfo.DIPData[pDIPConfig[i].nBank].nDefault) {
+			InpDIPConfigRemove(i);
+		}
+	}
+
+	for (unsigned int i = 0; i < DIPInfo.nDIP; i++) {
+		DIPInfo.DIPData[i].nConst = InpDIPConfigGetValue(i);
+		if (DIPInfo.DIPData[i].pVal) {
+			*(DIPInfo.DIPData[i].pVal) = DIPInfo.DIPData[i].nConst;
+		}
 	}
 }

@@ -39,9 +39,10 @@ run it, press START and choose Rom Show mode: all, available or non-available.
 If needed, supplementary rom paths could be set.
 
 FBA SDL could be used as a standalone application when invoked with
-rom zip with full path as a parameter:
+rom zip or fba cache with full path as a parameter:
 
 ./fbasdl.dge ./roms/dino.zip
+./fbasdl.dge ./roms/dino.fba
 
 Full path and extension are obligatory.
 
@@ -70,6 +71,7 @@ The options are as follows;
 Example:
 
 ./fbasdl.dge ./roms/dino.zip --sound-sdl --samplerate=44100 --68kcore=0 --z80core=0
+./fbasdl.dge ./roms/dino.fba --sound-sdl --samplerate=44100 --68kcore=0 --z80core=0
 
 
 Controls and hotkeys

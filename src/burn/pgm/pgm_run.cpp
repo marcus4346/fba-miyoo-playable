@@ -1,5 +1,6 @@
 
 #include "pgm.h"
+#include "cache.h"
 
 unsigned char PgmJoy1[8] = {0,0,0,0,0,0,0,0};
 unsigned char PgmJoy2[8] = {0,0,0,0,0,0,0,0};
@@ -498,32 +499,65 @@ int pgmInit()
 	Mem = NULL;
 	bGamePuzlstar = (strcmp(BurnDrvGetTextA(DRV_NAME), "puzlstar") == 0) ? 1 : 0;
 
-	pgmGetRoms(false);
+	if (bBurnUseRomCache) {
+		unsigned int nCache68KSize = BurnCacheBlockSize(0);
+		if (nCache68KSize <= 0x0220000) return 1;
+		nPGM68KROMLen = nCache68KSize - 0x0220000;
 
-	PGMTileROM      = (unsigned char*)malloc(nPGMTileROMLen);		// 8x8 Text Tiles + 32x32 BG Tiles
-	PGMTileROMExp   = (unsigned char*)malloc((nPGMTileROMLen / 5) * 8);	// Expanded 8x8 Text Tiles and 32x32 BG Tiles
-	PGMSPRColROM	= (unsigned char*)malloc(nPGMSPRColROMLen);
-	PGMSPRMaskROM	= (unsigned char*)malloc(nPGMSPRMaskROMLen);
-	ICSSNDROM		= (unsigned char*)malloc(nPGMSNDROMLen);
+		pgmMemIndex();
+		int nLen = MemEnd - (unsigned char *)0;
+		if ((Mem = (unsigned char *)malloc(nLen)) == NULL) return 1;
+		memset(Mem, 0, nLen);
+		pgmMemIndex();
 
-	pgmMemIndex();
-	int nLen = MemEnd - (unsigned char *)0;
-	if ((Mem = (unsigned char *)malloc(nLen)) == NULL) return 1;
-	memset(Mem, 0, nLen);
-	pgmMemIndex();
+		if (BurnCacheRead(PGM68KBIOS, 0)) return 1;
 
-	pgmGetRoms(true);
+		nPGMTileROMLen = BurnCacheBlockSize(1);
+		nPGMSPRColROMLen = BurnCacheBlockSize(2);
+		nPGMSPRMaskROMLen = BurnCacheBlockSize(3);
+		nPGMSNDROMLen = BurnCacheBlockSize(4);
+		if (!nPGMTileROMLen || !nPGMSPRColROMLen || !nPGMSPRMaskROMLen || !nPGMSNDROMLen) return 1;
 
-	// load bios roms
-	BurnLoadRom(PGM68KBIOS,		0x00080, 1);	// 68k bios
-	BurnLoadRom(PGMTileROM,		0x00081, 1);	// Bios Text and Tiles
-	BurnLoadRom(ICSSNDROM,		0x00082, 1);	// Bios Intro Sounds
+		PGMTileROM      = (unsigned char*)malloc(nPGMTileROMLen);		// 8x8 Text Tiles + 32x32 BG Tiles
+		PGMTileROMExp   = (unsigned char*)malloc((nPGMTileROMLen / 5) * 8);	// Expanded 8x8 Text Tiles and 32x32 BG Tiles
+		PGMSPRColROM	= (unsigned char*)BurnCacheMap(2);
+		PGMSPRMaskROM	= (unsigned char*)BurnCacheMap(3);
+		ICSSNDROM		= (unsigned char*)malloc(nPGMSNDROMLen);
 
-	// expand gfx1 into gfx2
-	expand_gfx_2();
+		if (!PGMTileROM || !PGMTileROMExp || !PGMSPRColROM || !PGMSPRMaskROM || !ICSSNDROM) return 1;
+		if (BurnCacheRead(PGMTileROM, 1)) return 1;
+		if (BurnCacheRead(ICSSNDROM, 4)) return 1;
 
-	if (pPgmInitCallback) {
-		pPgmInitCallback();
+		// expand gfx1 into gfx2
+		expand_gfx_2();
+	} else {
+		pgmGetRoms(false);
+
+		PGMTileROM      = (unsigned char*)malloc(nPGMTileROMLen);		// 8x8 Text Tiles + 32x32 BG Tiles
+		PGMTileROMExp   = (unsigned char*)malloc((nPGMTileROMLen / 5) * 8);	// Expanded 8x8 Text Tiles and 32x32 BG Tiles
+		PGMSPRColROM	= (unsigned char*)malloc(nPGMSPRColROMLen);
+		PGMSPRMaskROM	= (unsigned char*)malloc(nPGMSPRMaskROMLen);
+		ICSSNDROM		= (unsigned char*)malloc(nPGMSNDROMLen);
+
+		pgmMemIndex();
+		int nLen = MemEnd - (unsigned char *)0;
+		if ((Mem = (unsigned char *)malloc(nLen)) == NULL) return 1;
+		memset(Mem, 0, nLen);
+		pgmMemIndex();
+
+		pgmGetRoms(true);
+
+		// load bios roms
+		BurnLoadRom(PGM68KBIOS,		0x00080, 1);	// 68k bios
+		BurnLoadRom(PGMTileROM,		0x00081, 1);	// Bios Text and Tiles
+		BurnLoadRom(ICSSNDROM,		0x00082, 1);	// Bios Intro Sounds
+
+		// expand gfx1 into gfx2
+		expand_gfx_2();
+
+		if (pPgmInitCallback) {
+			pPgmInitCallback();
+		}
 	}
 
 	{
@@ -611,8 +645,10 @@ int pgmExit()
 
 	free (PGMTileROM);
 	free (PGMTileROMExp);
-	free (PGMSPRColROM);
-	free (PGMSPRMaskROM);
+	if (!bBurnUseRomCache) {
+		free (PGMSPRColROM);
+		free (PGMSPRMaskROM);
+	}
 
 	PGM68KBIOS = NULL;
 	PGM68KROM = NULL;

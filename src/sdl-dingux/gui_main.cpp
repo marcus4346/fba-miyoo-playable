@@ -891,23 +891,30 @@ void ss_prog_run(void)
 				} else if (event.key.keysym.sym == SDLK_LALT) {
 					save_lastsel();
 
-					nBurnDrvSelect = romsort[cfg.list][sel.rom];
-					ConfigGameSave();
+					unsigned int nSelectedDrv = romsort[cfg.list][sel.rom];
+					char szRomName[MAX_PATH];
+					sprintf(szRomName, "%s%s.%s", szAppRomPaths[romlist.path[nSelectedDrv]], romlist.zip[nSelectedDrv], romlist.cache[nSelectedDrv] ? "fba" : "zip");
 
-					SDL_QuitSubSystem(SDL_INIT_VIDEO);
+					int nDrv = FindDrvByFileName(szRomName);
+					if (nDrv >= 0) {
+						nBurnDrvSelect = nDrv;
+						ConfigGameSave();
 
-					// run emulator here
-					RunEmulator(nBurnDrvSelect);
+						SDL_QuitSubSystem(SDL_INIT_VIDEO);
 
-					if(!(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) {
-						SDL_InitSubSystem(SDL_INIT_VIDEO);
+						// run emulator here
+						RunEmulator(nBurnDrvSelect);
+
+						if(!(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) {
+							SDL_InitSubSystem(SDL_INIT_VIDEO);
+						}
+
+						gui_screen = SDL_SetVideoMode(320, 240, 16, SDL_SWSURFACE);
+						SDL_ShowCursor(0);
+
+						prep_bg();
+						Quit = 1;
 					}
-
-					gui_screen = SDL_SetVideoMode(320, 240, 16, SDL_SWSURFACE);
-					SDL_ShowCursor(0);
-
-					prep_bg();
-					Quit = 1;
 				} else if(event.key.keysym.sym == SDLK_LCTRL || event.key.keysym.sym == SDLK_ESCAPE) {
 					prep_bg();
 					Quit = 1;

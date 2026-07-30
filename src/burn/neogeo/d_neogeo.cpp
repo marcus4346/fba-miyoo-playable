@@ -3,6 +3,7 @@
 #include "neogeo.h"
 
 #include "bitswap.h"
+#include "cache.h"
 
 static struct BurnRomInfo emptyRomDesc[] = {
 	{ "",                    0,          0, 0 },
@@ -1139,6 +1140,10 @@ struct PCM2DecryptVInfo { int nAddressXor; int nAddressOffset; unsigned char nDa
 
 static void PCM2DecryptV(PCM2DecryptVInfo* pInfo)
 {
+	if (bBurnUseRomCache) {
+		return;
+	}
+
 	unsigned char* dst = (unsigned char*)malloc(0x01000000);
 
 	if (dst) {

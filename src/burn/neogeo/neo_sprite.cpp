@@ -1,4 +1,5 @@
 #include "neogeo.h"
+#include "cache.h"
 
 int nNeoScreenWidth;
 
@@ -101,6 +102,10 @@ int NeoInitSprites()
 {
 	// Create a table that indicates if a tile is transparent
 	NeoTileAttrib = (unsigned char*)malloc(nNeoTileMask + 1);
+	if (bBurnUseRomCache) {
+		return BurnCacheRead(NeoTileAttrib, 5);
+	}
+
 	for (int i = 0; i < nNeoMaxTile; i++) {
 		bool bTransparent = true;
 		for (int j = i << 7; j < (i + 1) << 7; j++) {

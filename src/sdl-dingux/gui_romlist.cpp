@@ -79,12 +79,26 @@ void gui_sort_romlist()
 		romlist.longueur[i] = strlen(romlist.name[i]);
 		if(romlist.long_max < romlist.longueur[i] ) romlist.long_max = romlist.longueur[i];
 
+		romlist.path[i] = 0;
+		romlist.cache[i] = 0;
 		romlist.etat[i] = ROUGE;
 		for(int j = 0; j < DIRS_MAX; j++) {
 			if(strlen(szAppRomPaths[j]) > 0) {
+				sprintf(g_string, "%s%hs.fba", szAppRomPaths[j], romlist.zip[i] );
+				if((fp = fopen(g_string, "r")) != NULL) {
+					fclose(fp);
+					romlist.path[i] = j;
+					romlist.cache[i] = 1;
+					romlist.etat[i] = (BurnDrvGetTextA(DRV_PARENT) ? ORANGE : JAUNE);
+					++romlist.nb_rom;
+					break;
+				}
+
 				sprintf(g_string, "%s%hs.zip", szAppRomPaths[j], romlist.zip[i] );
 				if((fp = fopen(g_string, "r")) != NULL) {
 					fclose(fp);
+					romlist.path[i] = j;
+					romlist.cache[i] = 0;
 					romlist.etat[i] = (BurnDrvGetTextA(DRV_PARENT) ? ORANGE : JAUNE);
 					++romlist.nb_rom;
 					break;

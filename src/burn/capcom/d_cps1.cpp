@@ -1,4 +1,5 @@
 #include "cps.h"
+#include "cache.h"
 
 #define CPS1_68K_PROGRAM_BYTESWAP	1
 #define CPS1_68K_PROGRAM_NO_BYTESWAP	2
@@ -8020,13 +8021,15 @@ static int DrvInit()
 	Cps = 1;
 	nRet = CpsInit(); if (nRet != 0) return 1;
 	
-	Cps1LoadRoms(1);
+	if (!bBurnUseRomCache) {
+		Cps1LoadRoms(1);
 	
-	if (AmendProgRomCallback) AmendProgRomCallback();
+		if (AmendProgRomCallback) AmendProgRomCallback();
+	}
 	
 	SetGameConfig();
 	
-	if (Cps1Qs) {
+	if (Cps1Qs && !bBurnUseRomCache) {
 		KabukiDecodeFunction();
 	}
 		

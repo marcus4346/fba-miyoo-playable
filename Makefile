@@ -142,7 +142,7 @@ ifdef USE_LIBAO
 endif
 
 depobj	+=	\
-		bzip.o config.o drv.o font.o input.o main.o paths.o \
+		bzip.o cache.o config.o drv.o font.o input.o main.o paths.o \
 		run.o tchar.o \
 		\
 		sdl_audio.o sdl_input.o sdl_menu.o sdl_progress.o \

@@ -1,4 +1,5 @@
 #include "cps.h"
+#include "cache.h"
 // CPS (general)
 
 int Cps = 0;							// 1 = CPS1, 2 = CPS2, 3 = CPS Changer
@@ -778,6 +779,10 @@ int CpsInit()
 	}
 	nCPS68KClockspeed = nCPS68KClockspeed * 100 / nBurnFPS;
 
+	if (bBurnUseRomCache) {
+		nCpsCodeLen = BurnCacheBlockSize(2);
+	}
+
 	nMemLen = nCpsGfxLen + nCpsRomLen + nCpsCodeLen + nCpsZRomLen + nCpsQSamLen + nCpsAdLen;
 
 	if (Cps1Qs == 1) {
@@ -817,6 +822,39 @@ int CpsInit()
 		nCpsGfxScroll[1] = nCpsGfxScroll[2] = nCpsGfxScroll[3] = 0;
 	}
 
+	if (bBurnUseRomCache) {
+		unsigned int nGfxBlock0 = BurnCacheBlockSize(4);
+		unsigned int nGfxBlock1 = BurnCacheBlockSize(5);
+
+		if (!BurnCacheBlockSize(0) || !BurnCacheBlockSize(1) || (nGfxBlock0 + nGfxBlock1) == 0) {
+			return 1;
+		}
+		if ((nGfxBlock0 + nGfxBlock1) > nCpsGfxLen) {
+			return 1;
+		}
+		if (BurnCacheRead(CpsRom, 0)) {
+			return 1;
+		}
+		if (BurnCacheRead(CpsZRom, 1)) {
+			return 1;
+		}
+		if (BurnCacheBlockSize(2) && BurnCacheRead(CpsCode, 2)) {
+			return 1;
+		}
+		if (BurnCacheBlockSize(3) && BurnCacheRead((unsigned char*)CpsQSam, 3)) {
+			return 1;
+		}
+		if (nGfxBlock0 && BurnCacheRead(CpsGfx, 4)) {
+			return 1;
+		}
+		if (nGfxBlock1 && BurnCacheRead(CpsGfx + nGfxBlock0, 5)) {
+			return 1;
+		}
+		if (BurnCacheBlockSize(6) && BurnCacheRead(CpsAd, 6)) {
+			return 1;
+		}
+	}
+
 #if 0
 	if (nCpsZRomLen>=5) {
 		// 77->cfff and rst 00 in case driver doesn't load
@@ -846,8 +884,10 @@ int Cps2Init()
 
 	CpsInit();
 
-	if (CpsGetROMs(true)) {
-		return 1;
+	if (!bBurnUseRomCache) {
+		if (CpsGetROMs(true)) {
+			return 1;
+		}
 	}
 
 	return CpsRunInit();

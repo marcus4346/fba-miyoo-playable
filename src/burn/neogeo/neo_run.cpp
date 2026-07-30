@@ -58,6 +58,7 @@
 #include "neogeo.h"
 #include "burn_ym2610.h"
 #include "bitswap.h"
+#include "cache.h"
 
 // #define LOG_IRQ2
 // #define LOG_DRAW
@@ -537,6 +538,60 @@ static int LoadRoms(NeoGameInfo* pInfo)
 
 	BurnLoadRom(NeoZ80BIOS,	0x00080 + 0x10, 1);
 	BurnLoadRom(NeoZoomROM,	0x00080 + 0x18, 1);
+
+	return 0;
+}
+
+static int LoadCacheRoms()
+{
+	int nLen;
+	unsigned int nBlockSize;
+
+	ROMIndex();													// Get amount of memory needed
+	nLen = ROMEnd - (unsigned char*)0;
+	nBlockSize = BurnCacheBlockSize(0);
+	if ((int)nBlockSize > nLen) {
+		nLen = nBlockSize;
+	}
+	if (nLen <= 0 || (AllROM = (unsigned char*)malloc(nLen)) == NULL) {
+		return 1;
+	}
+	memset(AllROM, 0, nLen);
+	ROMIndex();
+	if (BurnCacheRead(AllROM, 0)) {
+		return 1;
+	}
+
+	NeoSpriteROM = (unsigned char*)BurnCacheMap(1);
+	if (!NeoSpriteROM) {
+		return 1;
+	}
+
+	NeoTextROM = (unsigned char*)BurnCacheMap(2);
+	if (!NeoTextROM) {
+		return 1;
+	}
+
+	nBlockSize = BurnCacheBlockSize(3);
+	if (nBlockSize) {
+		nYM2610ADPCMASize = nBlockSize;
+		YM2610ADPCMAROM = (unsigned char*)malloc(nYM2610ADPCMASize);
+		if (!YM2610ADPCMAROM || BurnCacheRead(YM2610ADPCMAROM, 3)) {
+			return 1;
+		}
+	}
+
+	nBlockSize = BurnCacheBlockSize(4);
+	if (nBlockSize) {
+		nYM2610ADPCMBSize = nBlockSize;
+		YM2610ADPCMBROM = (unsigned char*)malloc(nYM2610ADPCMBSize);
+		if (!YM2610ADPCMBROM || BurnCacheRead(YM2610ADPCMBROM, 4)) {
+			return 1;
+		}
+	} else {
+		YM2610ADPCMBROM = YM2610ADPCMAROM;
+		nYM2610ADPCMBSize = nYM2610ADPCMASize;
+	}
 
 	return 0;
 }
@@ -1613,11 +1668,13 @@ unsigned char __fastcall vliner_timing(unsigned int sekAddress)
 
 static int neogeoReset()
 {
-	NeoLoad68KBIOS((NeoSystem & 0x07) ^ 4);
+	if (!bBurnUseRomCache) {
+		NeoLoad68KBIOS((NeoSystem & 0x07) ^ 4);
 
-	if (nBIOS == -1 || nBIOS == 9) {
-		// Write system type & region code into BIOS ROM
-		*((unsigned short*)(Neo68KBIOS + 0x000400)) = ((NeoSystem & 4) << 13) | (NeoSystem & 0x03);
+		if (nBIOS == -1 || nBIOS == 9) {
+			// Write system type & region code into BIOS ROM
+			*((unsigned short*)(Neo68KBIOS + 0x000400)) = ((NeoSystem & 4) << 13) | (NeoSystem & 0x03);
+		}
 	}
 
 #if 1 && defined FBA_DEBUG
@@ -1893,7 +1950,11 @@ int NeoInit()
 	}
 
 	nBIOS = 9999;
-	if (LoadRoms(pInfo)) {
+	if (bBurnUseRomCache) {
+		if (LoadCacheRoms()) {
+			return 1;
+		}
+	} else if (LoadRoms(pInfo)) {
 		return 1;
 	}
 
@@ -2087,9 +2148,13 @@ int NeoExit()
 	SekExit();								// Deallocate 68000
 
 	// Deallocate all used memory
-	free(NeoTextROM);						// Text ROM
+	if (!bBurnUseRomCache) {
+		free(NeoTextROM);					// Text ROM
+	}
 	NeoTextROM = NULL;
-	free(NeoSpriteROM);						// Sprite ROM
+	if (!bBurnUseRomCache) {
+		free(NeoSpriteROM);					// Sprite ROM
+	}
 	NeoSpriteROM = NULL;
 
 	if (nYM2610ADPCMASize) {				// ADPCM data
