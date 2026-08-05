@@ -31,10 +31,10 @@
 #define KEYPAD_RIGHT    0x0008
 #define KEYPAD_COIN     0x0010
 #define KEYPAD_START    0x0020
-#define KEYPAD_FIRE1    0x0080
-#define KEYPAD_FIRE2    0x0040
-#define KEYPAD_FIRE3    0x0200
-#define KEYPAD_FIRE4    0x0100
+#define KEYPAD_FIRE1    0x0040
+#define KEYPAD_FIRE2    0x0080
+#define KEYPAD_FIRE3    0x0100
+#define KEYPAD_FIRE4    0x0200
 #define KEYPAD_FIRE5    0x0400
 #define KEYPAD_FIRE6    0x0800
 
@@ -161,10 +161,10 @@ void do_keypad()
 	if (keypad & KEYPAD_COIN) FBA_KEYPAD[0] |= KEYPAD_COIN;
 	if (keypad & KEYPAD_START) FBA_KEYPAD[0] |= KEYPAD_START;
 
-	if (keypad & KEYPAD_FIRE1) FBA_KEYPAD[0] |= KEYPAD_FIRE1;		// A
-	if (keypad & KEYPAD_FIRE2) FBA_KEYPAD[0] |= KEYPAD_FIRE2;		// B
-	if (keypad & KEYPAD_FIRE3) FBA_KEYPAD[0] |= KEYPAD_FIRE3;		// X
-	if (keypad & KEYPAD_FIRE4) FBA_KEYPAD[0] |= KEYPAD_FIRE4;		// Y
+	if (keypad & KEYPAD_FIRE1) FBA_KEYPAD[0] |= KEYPAD_FIRE1;		// B
+	if (keypad & KEYPAD_FIRE2) FBA_KEYPAD[0] |= KEYPAD_FIRE2;		// A
+	if (keypad & KEYPAD_FIRE3) FBA_KEYPAD[0] |= KEYPAD_FIRE3;		// Y
+	if (keypad & KEYPAD_FIRE4) FBA_KEYPAD[0] |= KEYPAD_FIRE4;		// X
 	if (keypad & KEYPAD_FIRE5) FBA_KEYPAD[0] |= KEYPAD_FIRE5;		// L
 	if (keypad & KEYPAD_FIRE6) FBA_KEYPAD[0] |= KEYPAD_FIRE6;		// R
 
