@@ -895,7 +895,7 @@ static unsigned int nNeoSMARNGAddress[2] = { 0, 0 };
 // Bank in an area of memory
 void NeoSMABankswitch()
 {
-	SekMapMemory(Neo68KROM + nNeo68KROMBank, 0x200000, 0x2fe3ff, SM_ROM);
+	SekMapRomBank(Neo68KROM + nNeo68KROMBank, 0x200000, 0x2fe3ff);
 	if (nNeoSMARNGAddress[0] > 0 || nNeoSMARNGAddress[1] > 0) {
 		SekMapMemory(Neo68KROM + nNeo68KROMBank + 0x0fe800, 0x2fe800, 0x2ffbff, SM_ROM);
 	} else {

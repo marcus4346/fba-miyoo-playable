@@ -148,6 +148,8 @@ int SekCurrentScanline();
 
 // Map areas of memory
 int SekMapMemory(unsigned char* pMemory, unsigned int nStart, unsigned int nEnd, int nType);
+// Hot ROM bank window with a page-aligned start and an inclusive end.
+void SekMapRomBank(unsigned char* pMemory, unsigned int nStart, unsigned int nEnd);
 int SekMapHandler(unsigned int nHandler, unsigned int nStart, unsigned int nEnd, int nType);
 
 // Set handlers

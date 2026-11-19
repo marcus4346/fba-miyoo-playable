@@ -658,6 +658,21 @@ int SekRun(const int nCycles)
 // Memory map setup
 
 // Note - each page is 1 << SEK_BITS.
+void SekMapRomBank(unsigned char* pMemory, unsigned int nStart, unsigned int nEnd)
+{
+    const unsigned int first = nStart >> SEK_SHIFT;
+    const unsigned int pages = (nEnd >> SEK_SHIFT) - first + 1;
+    unsigned char* volatile* const readMap = pSekExt->MemMap + first;
+    unsigned char* volatile* const fetchMap = readMap + SEK_WADD * 2;
+
+    // Alternating stores to the two tables can stall on some DRAM layouts.
+    // Preserve two sequential passes even with link-time optimization.
+    for (unsigned int i = 0; i < pages; ++i)
+        readMap[i] = pMemory + i * SEK_PAGE_SIZE;
+    for (unsigned int i = 0; i < pages; ++i)
+        fetchMap[i] = pMemory + i * SEK_PAGE_SIZE;
+}
+
 int SekMapMemory(unsigned char* pMemory, unsigned int nStart, unsigned int nEnd, int nType)
 {
 //	dprintf("SekMapMemory(%p, 0x%08X, 0x%08X, 0x%X);\n", pMemory, nStart, nEnd, nType);
